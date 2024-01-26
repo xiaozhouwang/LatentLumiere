@@ -22,6 +22,7 @@ import torch.nn as nn
 import torch.utils.checkpoint
 
 from diffusers.configuration_utils import ConfigMixin, register_to_config
+from diffusers import UNet2DConditionModel
 from diffusers.modeling_utils import ModelMixin
 from diffusers.utils import BaseOutput, logging
 from diffusers.models.embeddings import TimestepEmbedding, Timesteps
@@ -346,10 +347,15 @@ class UP2FirstDownBlock(ModelMixin, ConfigMixin):
         return sample, down_block_res_samples
 
 
+def get_pretrained_up2firstdownblock(unet):
+    up2first = UP2FirstDownBlock.from_config(unet.config)
+    up2first_state_dict = {k: v for k, v in unet.state_dict().items()}
+    up2first.load_state_dict(up2first_state_dict, strict=False)
+    return up2first
+
+
 if __name__ == "__main__":
     """example usage"""
-    import torch
-    from diffusers import UNet2DConditionModel
     model_id = "stabilityai/stable-diffusion-2-1"
     unet = UNet2DConditionModel.from_pretrained(model_id, subfolder="unet")
 
@@ -359,9 +365,7 @@ if __name__ == "__main__":
     text_embeddings = torch.randn(1, 77, 1024).to('cuda') # 1024 is the dim used in sd2.1
     t = torch.tensor(50).long().to('cuda')
 
-    up2first = UP2FirstDownBlock.from_config(unet.config)
-    up2first_state_dict = {k: v for k, v in unet.state_dict().items()}
-    up2first.load_state_dict(up2first_state_dict, strict=False)
+    up2first = get_pretrained_up2firstdownblock(unet)
     up2first = up2first.to('cuda')
     del unet
 
