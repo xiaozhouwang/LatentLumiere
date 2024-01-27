@@ -266,6 +266,16 @@ class STUNet(UNet2DConditionModel):
                 for param in block.parameters():
                     param.requires_grad = True
 
+    def zero_initialize_trainable_params(self):
+        """initalize trainable params with zeros, mostly for testing purposes"""
+        # Iterate over all parameters in the model
+        for param in self.parameters():
+            # Check if the parameter is trainable
+            if param.requires_grad:
+                # Initialize the parameter with zeros
+                with torch.no_grad():
+                    param.zero_()
+
 
 def temporal_resizing(channels, sampling):
     if sampling == "down":
