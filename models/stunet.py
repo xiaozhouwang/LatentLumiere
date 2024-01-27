@@ -17,9 +17,8 @@ from diffusers.models.unet_2d_condition import UNet2DConditionOutput
 
 
 class STUNet(UNet2DConditionModel):
-    def __init__(self, temporal_attn_embed, temporal_attn_n_heads=8, temporal_attn_layers=4, *args, **kwargs):
+    def __init__(self, temporal_attn_n_heads=8, temporal_attn_layers=4, *args, **kwargs):
         """
-        :param temporal_attention_embed: c*h*w at the coarsest U-Net level
         :param temporal_attn_n_heads:
         :param temporal_attn_layers:
         :param args:
@@ -42,7 +41,8 @@ class STUNet(UNet2DConditionModel):
             self.inflate_down_blocks.append(ConvInflationBlock(block_out_c, block_out_c, block_out_c))
         """middle, 1d attention layers"""
         for _ in range(temporal_attn_layers):
-            self.inflate_mid_blocks.append(TemporalAttention(feature_dim=temporal_attn_embed, num_heads=temporal_attn_n_heads))
+            self.inflate_mid_blocks.append(TemporalAttention(num_channels=block_out_channels[-1],
+                                                             num_heads=temporal_attn_n_heads))
         """up, conv inflation blocks"""
         for block_out_c in block_out_channels[::-1]:
             self.inflate_up_blocks.append(ConvInflationBlock(block_out_c, block_out_c, block_out_c))
@@ -58,7 +58,7 @@ class STUNet(UNet2DConditionModel):
     ) -> Union[UNet2DConditionOutput, Tuple]:
         """input sample shape: b, c, d, h, w"""
         b, c, d, h, w = sample.shape
-        sample = rearrange(sample, 'b c d h w -> (b d) c h w') # combine batch and depth dim for 2d unet processing
+        sample = rearrange(sample, 'b c d h w -> (b d) c h w') # combine batch and frame dim for 2d unet processing
         encoder_hidden_states = repeat(encoder_hidden_states, 'b s e -> b d s e', d=d) # repeat text for each frame
         encoder_hidden_states = rearrange(encoder_hidden_states, 'b d s e -> (b d) s e') # combine for 2d unet
 
@@ -248,22 +248,21 @@ class ConvInflationBlock(nn.Sequential):
 
 class TemporalAttention(nn.Module):
     """1D Attention in Attention based inflation block in Lumiere"""
-    def __init__(self, feature_dim, num_heads=8):
-        """feature_dim: channels*height*width"""
+    def __init__(self, num_channels, num_heads=8):
         super(TemporalAttention, self).__init__()
-        self.attention = nn.MultiheadAttention(embed_dim=feature_dim, num_heads=num_heads, batch_first=True)
+        self.attention = nn.MultiheadAttention(embed_dim=num_channels, num_heads=num_heads, batch_first=True)
 
     def forward(self, x):
         # Extract original spatial dimensions before rearranging
         batch_size, channels, depth, height, width = x.shape
 
         # Assuming x is of shape (batch_size, channels, depth, height, width)
-        x = rearrange(x, 'b c d h w -> b d (c h w)')
+        x = rearrange(x, 'b c d h w -> (b h w) d c')
         # Apply attention to the sequence along the temporal dimension
         attn_output, _ = self.attention(x, x, x)  # shape remains (batch_size, depth, channels*height*width)
 
         # Reshape the output back to the original shape
-        attn_output = rearrange(attn_output, 'b d (c h w) -> b c d h w', c=channels, h=height, w=width)
+        attn_output = rearrange(attn_output, '(b h w) d c -> b c d h w', c=channels, h=height, w=width)
 
         return attn_output
 
@@ -291,9 +290,9 @@ if __name__ == "__main__":
     model_id = "stabilityai/stable-diffusion-2-1"
     unet = UNet2DConditionModel.from_pretrained(model_id, subfolder="unet")
     unet_config = dict(unet.config)
-    stunet = STUNet(temporal_attn_embed=1280*4, temporal_attn_layers=1, **unet_config)
+    stunet = STUNet(temporal_attn_layers=5, **unet_config)
     latents = torch.randn(
-        (1, unet.in_channels, 80, 16, 16)
+        (1, unet.in_channels, 80, 32, 32)
     ).to('cuda')
     text_embeddings = torch.randn(1, 77, 1024).to('cuda')  # 1024 is the dim used in sd2.1
     t = torch.tensor(50).long().to('cuda')
