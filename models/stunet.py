@@ -15,11 +15,12 @@ from diffusers.models.unet_2d_condition import UNet2DConditionOutput
 
 
 class STUNet(UNet2DConditionModel):
-    def __init__(self, temporal_attn_n_heads=8, temporal_attn_layers=4, debug_verbose: bool = False,
+    def __init__(self, temporal_attn_n_heads=8, temporal_attn_layers=4, freeze_pretrained=True, debug_verbose: bool = False,
                  temporal_sampling: bool = True, *args, **kwargs):
         """
-        :param temporal_attn_n_heads:
-        :param temporal_attn_layers:
+        :param temporal_attn_n_heads: attention heads for the 1d temporal attention
+        :param temporal_attn_layers: number of attention layers for the 1d temporal attention
+        :param freeze_pretrained: freeze the pretrained 2d UNet layer weights
         :param debug_verbose: print out information like intermediate results for debugging purposes
         :param temporal_sampling: turn off to not perform temporal downsampling, e.g. to test if t2i base model works as expected
         :param args:
@@ -51,6 +52,9 @@ class STUNet(UNet2DConditionModel):
         for block_out_c in block_out_channels[::-1]:
             self.inflate_up_blocks.append(ConvInflationBlock(block_out_c, block_out_c, block_out_c))
             self.temporal_upsample_blocks.append(temporal_resizing(block_out_c, sampling='up'))
+
+        if freeze_pretrained:
+            self.freeze_pretrained_layers()
 
         self.debug_verbose = debug_verbose
         self.temporal_sampling = temporal_sampling
@@ -354,5 +358,4 @@ if __name__ == "__main__":
     out = stunet(latents, t, text_embeddings)
     print(out.sample.shape)
 
-    stunet.freeze_pretrained_layers()
     print_model_info(stunet)
