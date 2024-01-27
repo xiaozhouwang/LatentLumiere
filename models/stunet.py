@@ -163,6 +163,9 @@ class STUNet(UNet2DConditionModel):
         old_w = w
         for downsample_block, inflate_block, sample_block in zip(self.down_blocks, self.inflate_down_blocks, self.temporal_downsample_blocks):
             if hasattr(downsample_block, "has_cross_attention") and downsample_block.has_cross_attention:
+                if debug_verbose:
+                    print(f"down, sample shape: {sample.shape}, temb shape: {prepare_time_embedding(timesteps, sample.shape[0]).shape}, "
+                          f"encoder_hidden_states shape: {prepare_encoder_hidden_states(encoder_hidden_states, num_frames=d).shape}")
                 sample, res_samples = downsample_block(
                     hidden_states=sample,
                     temb=prepare_time_embedding(timesteps, sample.shape[0]),
