@@ -205,6 +205,24 @@ class STUNet(UNet2DConditionModel):
 
         return UNet2DConditionOutput(sample=sample)
 
+    def freeze_pretrained_layers(self):
+        # Freeze all layers in the model
+        for param in self.parameters():
+            param.requires_grad = False
+
+        # Unfreeze the inflation blocks
+        for block in self.inflate_down_blocks:
+            for param in block.parameters():
+                param.requires_grad = True
+
+        for block in self.inflate_mid_blocks:
+            for param in block.parameters():
+                param.requires_grad = True
+
+        for block in self.inflate_up_blocks:
+            for param in block.parameters():
+                param.requires_grad = True
+
 
 class ConvInflationBlock(nn.Sequential):
     """Convolution-based Inflation Block in Lumiere, without the pretrained spatial layers"""
@@ -250,18 +268,38 @@ class TemporalAttention(nn.Module):
         return attn_output
 
 
+def print_model_info(model):
+    total_params = 0
+    total_trainable_params = 0
+
+    print("Trainable layers and their parameters:")
+    for name, param in model.named_parameters():
+        param_count = param.numel()
+        total_params += param_count
+
+        if param.requires_grad:
+            print(f"Layer: {name}, Parameters: {param_count}")
+            total_trainable_params += param_count
+
+    print(f"\nTotal number of parameters: {total_params/1e6}M")
+    print(f"Total number of trainable parameters: {total_trainable_params/1e6}M, "
+          f"{round(total_trainable_params/total_params*100, 2)}%")
+
+
 if __name__ == "__main__":
     """example usage"""
     model_id = "stabilityai/stable-diffusion-2-1"
     unet = UNet2DConditionModel.from_pretrained(model_id, subfolder="unet")
-    # unet = unet.to('cuda')
     unet_config = dict(unet.config)
-    stunet = STUNet(temporal_attn_embed=1280, temporal_attn_layers=1, **unet_config)
+    stunet = STUNet(temporal_attn_embed=1280*4, temporal_attn_layers=1, **unet_config)
     latents = torch.randn(
-        (2, unet.in_channels, 80, 8, 8)
+        (1, unet.in_channels, 80, 16, 16)
     ).to('cuda')
-    text_embeddings = torch.randn(2, 77, 1024).to('cuda')  # 1024 is the dim used in sd2.1
+    text_embeddings = torch.randn(1, 77, 1024).to('cuda')  # 1024 is the dim used in sd2.1
     t = torch.tensor(50).long().to('cuda')
     stunet = stunet.to('cuda')
     out = stunet(latents, t, text_embeddings)
     print(out.sample.shape)
+
+    stunet.freeze_pretrained_layers()
+    print_model_info(stunet)
