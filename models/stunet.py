@@ -15,12 +15,13 @@ from diffusers.models.unet_2d_condition import UNet2DConditionOutput
 
 
 class STUNet(UNet2DConditionModel):
-    def __init__(self, temporal_attn_n_heads=8, temporal_attn_layers=4, freeze_pretrained=True, debug_verbose: bool = False,
+    def __init__(self, pretrained_model_weights, freeze_pretrained=True, temporal_attn_n_heads=8, temporal_attn_layers=4, debug_verbose: bool = False,
                  temporal_sampling: bool = True, *args, **kwargs):
         """
+        :param pretrained_model_weights: pretrained unet weights, e.g. unet.state_dict()
+        :param freeze_pretrained: freeze the pretrained 2d UNet layer weights
         :param temporal_attn_n_heads: attention heads for the 1d temporal attention
         :param temporal_attn_layers: number of attention layers for the 1d temporal attention
-        :param freeze_pretrained: freeze the pretrained 2d UNet layer weights
         :param debug_verbose: print out information like intermediate results for debugging purposes
         :param temporal_sampling: turn off to not perform temporal downsampling, e.g. to test if t2i base model works as expected
         :param args:
@@ -53,11 +54,12 @@ class STUNet(UNet2DConditionModel):
             self.inflate_up_blocks.append(ConvInflationBlock(block_out_c, block_out_c, block_out_c))
             self.temporal_upsample_blocks.append(temporal_resizing(block_out_c, sampling='up'))
 
-        if freeze_pretrained:
-            self.freeze_pretrained_layers()
-
         self.debug_verbose = debug_verbose
         self.temporal_sampling = temporal_sampling
+
+        self.load_pretrained_weights(pretrained_model_weights)
+        if freeze_pretrained:
+            self.freeze_pretrained_layers()
 
     def forward(
         self,
@@ -278,6 +280,10 @@ class STUNet(UNet2DConditionModel):
                 # Initialize the parameter with zeros
                 with torch.no_grad():
                     param.zero_()
+
+    def load_pretrained_weights(self, unet_weights):
+        unet_state_dict = {k: v for k, v in unet_weights.items()}
+        self.load_state_dict(unet_state_dict, strict=False)
 
 
 def temporal_resizing(channels, sampling):
